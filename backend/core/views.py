@@ -24,6 +24,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -53,6 +54,8 @@ from .serializers import (
     ProfileSerializer,
     QuestionSerializer,
     RegisterSerializer,
+    AssignmentStatusUpdateSerializer,
+    OracleTestCaseRequestSerializer,
     SubmitProofSerializer,
     TestCaseSerializer,
     TrackerTokenObtainPairSerializer,
@@ -72,10 +75,17 @@ def get_period_start(period: str):
     Last 30 Days" requirement precisely. `None` means "all time".
     """
     mapping = {"7days": 7, "30days": 30}
+    if period not in mapping:
+        raise ValidationError({"period": "Must be one of: 7days, 30days."})
     days = mapping.get(period)
-    if days is None:
-        return None
     return timezone.now() - timedelta(days=days)
+
+
+def validate_analytics_filters(difficulty, status_filter=None):
+    if difficulty is not None and difficulty not in dict(Question.DIFFICULTY_CHOICES):
+        raise ValidationError({"difficulty": "Contains an unsupported difficulty."})
+    if status_filter is not None and status_filter not in dict(Assignment.STATUS_CHOICES):
+        raise ValidationError({"status": "Contains an unsupported status."})
 
 
 def build_breakdown(queryset):
@@ -392,9 +402,9 @@ class QuestionViewSet(viewsets.ModelViewSet):
         from .agents.constraint_validator import normalize_candidate_input, validate_generated_candidates
 
         question = self.get_object()
-        input_data = request.data.get("input_data")
-        if not isinstance(input_data, str) or not input_data.strip():
-            return Response({"input_data": "A non-empty input is required."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = OracleTestCaseRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        input_data = serializer.validated_data["input_data"]
         # Treat this as a candidate input, not trusted test data.  It must
         # pass the same Phase 2 gate used by the AI generation endpoint before
         # the Oracle can ever be called.
@@ -419,15 +429,13 @@ class QuestionViewSet(viewsets.ModelViewSet):
                 {"detail": "Reference solution not verified.", "state": "reference_solution_not_verified"},
                 status=status.HTTP_409_CONFLICT,
             )
-        validation_type = request.data.get("validation_type", TestCase.VALIDATION_EXACT)
-        validator_type = request.data.get("validator_type", "")
-        if validation_type not in dict(TestCase.VALIDATION_CHOICES):
-            return Response({"validation_type": "Unknown validation type."}, status=status.HTTP_400_BAD_REQUEST)
+        validation_type = serializer.validated_data["validation_type"]
+        validator_type = serializer.validated_data["validator_type"]
         test_case = TestCase(
             question=question,
             input_data=input_data,
-            is_hidden=bool(request.data.get("is_hidden", False)),
-            order=request.data.get("order", question.test_cases.count()),
+            is_hidden=serializer.validated_data["is_hidden"],
+            order=serializer.validated_data.get("order", question.test_cases.count()),
             validation_type=validation_type,
             validator_type=validator_type if validation_type == TestCase.VALIDATION_CUSTOM else "",
         )
@@ -549,10 +557,9 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                 {"detail": "Validated solutions cannot change status."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        new_status = request.data.get("status")
-        valid_statuses = dict(Assignment.STATUS_CHOICES)
-        if new_status not in valid_statuses:
-            return Response({"detail": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = AssignmentStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_status = serializer.validated_data["status"]
         # Users mark completed only after admin validates LinkedIn proof.
         if new_status == "completed" and assignment.proof_status != "validated":
             return Response(
@@ -749,6 +756,7 @@ class MyActivityView(APIView):
     def get(self, request):
         period = request.query_params.get("period", "30days")
         difficulty = request.query_params.get("difficulty")
+        validate_analytics_filters(difficulty)
 
         qs = Assignment.objects.filter(user=request.user).select_related("question")
         start = get_period_start(period)
@@ -783,6 +791,7 @@ class StudentActivityView(APIView):
         period = request.query_params.get("period", "30days")
         difficulty = request.query_params.get("difficulty")
         status_filter = request.query_params.get("status")
+        validate_analytics_filters(difficulty, status_filter)
 
         qs = Assignment.objects.filter(user_id=user_id).select_related("question", "user")
         start = get_period_start(period)
@@ -792,7 +801,7 @@ class StudentActivityView(APIView):
             qs = qs.filter(question__difficulty=difficulty)
         qs = annotate_workflow_status(qs)
         status_counts = workflow_status_counts(qs)
-        if status_filter in {"assigned", "in_progress", "completed"}:
+        if status_filter:
             qs = qs.filter(workflow_status=status_filter)
 
         student = User.objects.filter(id=user_id).select_related("profile").first()
@@ -831,6 +840,8 @@ class StudentListView(generics.ListAPIView):
             )
         )
         search = (self.request.query_params.get("search") or "").strip()
+        if len(search) > 100:
+            raise ValidationError({"search": "Must not exceed 100 characters."})
         if search:
             qs = qs.filter(
                 Q(user__username__icontains=search)

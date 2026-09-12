@@ -171,7 +171,9 @@ class TestCaseSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             "id": {"required": False},
-            "expected_output": {"required": False, "allow_blank": True},
+            # Bound admin authoring payloads without constraining normal DSA cases.
+            "input_data": {"max_length": 20_000},
+            "expected_output": {"required": False, "allow_blank": True, "max_length": 20_000},
             "validation_type": {"required": False},
             "validator_type": {"required": False, "allow_blank": True},
             "verification_status": {"required": False},
@@ -234,6 +236,12 @@ class QuestionSerializer(serializers.ModelSerializer):
             "created_by", "created_at", "updated_at", "reference_solution_status",
             "reference_solution_error",
         ]
+        extra_kwargs = {
+            "description": {"max_length": 50_000},
+            "examples": {"max_length": 20_000},
+            "prerequisites": {"max_length": 10_000},
+            "reference_solution": {"max_length": 100_000},
+        }
 
     def _now(self):
         return timezone.now()
@@ -458,6 +466,20 @@ class SubmitProofSerializer(serializers.Serializer):
                 "Other links (e.g. Striver / takeuforward) cannot be submitted as proof."
             )
         return value
+
+
+class AssignmentStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Assignment.STATUS_CHOICES)
+
+
+class OracleTestCaseRequestSerializer(serializers.Serializer):
+    input_data = serializers.CharField(allow_blank=False, trim_whitespace=True, max_length=20_000)
+    is_hidden = serializers.BooleanField(required=False, default=False)
+    order = serializers.IntegerField(required=False, min_value=0, max_value=32_767)
+    validation_type = serializers.ChoiceField(
+        choices=TestCase.VALIDATION_CHOICES, required=False, default=TestCase.VALIDATION_EXACT
+    )
+    validator_type = serializers.CharField(required=False, allow_blank=True, max_length=64, default="")
 
 
 class NotificationSerializer(serializers.ModelSerializer):

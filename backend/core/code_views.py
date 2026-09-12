@@ -1,5 +1,7 @@
 """Online judge: run (public tests) and submit (all tests via remote sandbox)."""
 
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -17,6 +19,9 @@ from .serializers import (
     CodeSubmissionSerializer,
     RunCodeSerializer,
 )
+
+logger = logging.getLogger(__name__)
+EXECUTOR_UNAVAILABLE_MESSAGE = "Code execution service is temporarily unavailable."
 
 
 def _ensure_active_student(user):
@@ -141,7 +146,8 @@ class CodeRunView(APIView):
                 reveal_io=True,
             )
         except ExecutorUnavailable as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            logger.warning("Code execution unavailable during run: %s", exc.__class__.__name__)
+            return Response({"detail": EXECUTOR_UNAVAILABLE_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         outcome["results"] = _student_safe_results(outcome.get("results"))
         return Response(outcome)
 
@@ -197,10 +203,11 @@ class CodeSubmitView(APIView):
                 reveal_io=True,
             )
         except ExecutorUnavailable as exc:
+            logger.warning("Code execution unavailable during submit: %s", exc.__class__.__name__)
             submission.status = CodeSubmission.STATUS_RUNTIME_ERROR
-            submission.compile_output = str(exc)
+            submission.compile_output = EXECUTOR_UNAVAILABLE_MESSAGE
             submission.save(update_fields=["status", "compile_output", "updated_at"])
-            return Response({"detail": str(exc), "submission": CodeSubmissionSerializer(submission).data}, status=503)
+            return Response({"detail": EXECUTOR_UNAVAILABLE_MESSAGE, "submission": CodeSubmissionSerializer(submission).data}, status=503)
 
         with transaction.atomic():
             locked = CodeSubmission.objects.select_for_update().select_related("question", "user").get(pk=submission.pk)

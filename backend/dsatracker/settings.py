@@ -171,12 +171,13 @@ REST_FRAMEWORK = {
         "auth_logout": "10/min",
     },
     "DEFAULT_FILTER_BACKENDS": (
-        "django_filters.rest_framework.DjangoFilterBackend",
-        "rest_framework.filters.SearchFilter",
-        "rest_framework.filters.OrderingFilter",
+        "core.filters.StrictDjangoFilterBackend",
+        "core.filters.BoundedSearchFilter",
+        "core.filters.StrictOrderingFilter",
     ),
     "DEFAULT_PAGINATION_CLASS": "core.pagination.FlexiblePagination",
     "PAGE_SIZE": 20,
+    "EXCEPTION_HANDLER": "core.exception_handler.api_exception_handler",
 }
 
 SIMPLE_JWT = {
@@ -195,7 +196,10 @@ CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = False
 
 
+<<<<<<< HEAD
 def _is_valid_cors_origin(origin):
+=======
+def _valid_origin(origin):
     parsed = urlsplit(origin)
     return (
         origin == origin.strip()
@@ -208,17 +212,49 @@ def _is_valid_cors_origin(origin):
     )
 
 
-def _validate_cors_origins(origins, production):
-    if any(not _is_valid_cors_origin(origin) for origin in origins):
-        raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS must contain explicit HTTP(S) origins only.")
-    if production:
-        if not origins:
-            raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS is required when DJANGO_ENV=production.")
-        if any(urlsplit(origin).scheme != "https" for origin in origins):
-            raise ImproperlyConfigured("Production CORS_ALLOWED_ORIGINS must use HTTPS.")
+<<<<<<< HEAD
+def _validate_origins(origins, name, production=False, required=False):
+    if required and not origins:
+        raise ImproperlyConfigured(
+            f"{name} is required when DJANGO_ENV=production."
+        )
+
+    if any(not _valid_origin(origin) for origin in origins):
+        raise ImproperlyConfigured(
+            f"{name} must contain explicit HTTP(S) origins only."
+        )
+
+    if production and any(
+        urlsplit(origin).scheme != "https" for origin in origins
+    ):
+        raise ImproperlyConfigured(
+            f"{name} must use HTTPS origins when DJANGO_ENV=production."
+        )
 
 
-_validate_cors_origins(CORS_ALLOWED_ORIGINS, ENVIRONMENT == "production")
+_validate_origins(
+    CORS_ALLOWED_ORIGINS,
+    "CORS_ALLOWED_ORIGINS",
+    ENVIRONMENT == "production",
+    required=ENVIRONMENT == "production",
+)
+
+_validate_origins(
+    CSRF_TRUSTED_ORIGINS,
+    "CSRF_TRUSTED_ORIGINS",
+    ENVIRONMENT == "production",
+)
+    if required and not origins:
+        raise ImproperlyConfigured(f"{name} is required when DJANGO_ENV=production.")
+    if any(not _valid_origin(origin) for origin in origins):
+        raise ImproperlyConfigured(f"{name} must contain explicit HTTP(S) origins only.")
+    if production and any(urlsplit(origin).scheme != "https" for origin in origins):
+        raise ImproperlyConfigured(f"{name} must use HTTPS origins when DJANGO_ENV=production.")
+
+
+_validate_origins(CORS_ALLOWED_ORIGINS, "CORS_ALLOWED_ORIGINS", ENVIRONMENT == "production", required=ENVIRONMENT == "production")
+_validate_origins(CSRF_TRUSTED_ORIGINS, "CSRF_TRUSTED_ORIGINS", ENVIRONMENT == "production")
+>>>>>>> db3c86d (Implement security phase 3 validation)
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
