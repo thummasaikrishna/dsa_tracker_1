@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: dsa-tracker-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    # Runs only during a Render deployment after you have reviewed the plan.
+    # It applies Django migrations to the existing DATABASE_URL database.
+    preDeployCommand: python manage.py migrate --noinput
+    startCommand: gunicorn dsatracker.wsgi:application --bind 0.0.0.0:$PORT
+    healthCheckPath: /admin/login/
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY_1
+        sync: false
+      - key: OPENROUTER_API_KEY_2
+        sync: false

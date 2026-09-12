@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { @apply bg-slate-50 text-slate-800; }
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700; }
+.btn-secondary { @apply bg-white text-slate-700 border border-slate-300 hover:bg-slate-100; }
+.btn-danger { @apply bg-red-50 text-red-600 hover:bg-red-100; }
+.input {
+  @apply w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent;
+}
+.card { @apply bg-white rounded-xl border border-slate-200 shadow-sm; }
+.badge { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold; }
+.badge-easy { @apply bg-emerald-100 text-emerald-700; }
+.badge-medium { @apply bg-amber-100 text-amber-700; }
+.badge-hard { @apply bg-rose-100 text-rose-700; }
+.badge-assigned { @apply bg-slate-100 text-slate-600; }
+.badge-in_progress { @apply bg-blue-100 text-blue-700; }
+.badge-completed { @apply bg-emerald-100 text-emerald-700; }
