@@ -532,6 +532,14 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         sync_admin_inactivity_notifications()
         return Response(AssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
 
+    def update(self, request, *args, **kwargs):
+        """State changes use explicit, ownership-checked workflow actions only."""
+        return self.http_method_not_allowed(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        """Prevent PATCH from bypassing status/proof/score workflow controls."""
+        return self.http_method_not_allowed(request, *args, **kwargs)
+
     @action(detail=True, methods=["patch"])
     def status_update(self, request, pk=None):
         """PATCH /assignments/{id}/status_update/  { "status": "completed" }"""

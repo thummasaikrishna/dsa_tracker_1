@@ -123,6 +123,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "role", "created_at", "total_assignments", "proof_count",
             "activity_state", "is_removed",
         ]
+        read_only_fields = ["role"]
 
     def get_activity_state(self, obj):
         assigned = getattr(obj, "total_assignments", None)
@@ -377,7 +378,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "assigned_at", "updated_at",
         ]
         read_only_fields = [
-            "user", "assigned_at", "updated_at", "proof_status",
+            # Assignment state moves only through explicit workflow actions.
+            # This serializer is response-only; it must never reopen a generic
+            # PATCH/PUT path for ownership, score, proof, or status changes.
+            "id", "user", "question", "status", "assigned_at", "updated_at", "proof_status",
             "submitted_at", "validated_at", "linkedin_post_url",
             "potential_points", "points_awarded",
         ]
@@ -407,9 +411,15 @@ class AssignmentSerializer(serializers.ModelSerializer):
 class AssignmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Assignment
-        fields = ["id", "question", "status"]
+        fields = ["id", "question"]
+        read_only_fields = ["id"]
 
     def validate(self, attrs):
+        disallowed = set(self.initial_data) - {"question"}
+        if disallowed:
+            raise serializers.ValidationError(
+                {field: "This field is not allowed when creating an assignment." for field in disallowed}
+            )
         request = self.context["request"]
         question = attrs["question"]
         if Assignment.objects.filter(user=request.user, question=question).exists():
