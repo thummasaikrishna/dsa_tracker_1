@@ -8,8 +8,8 @@ export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     navigate("/login");
   }
 

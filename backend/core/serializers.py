@@ -1,11 +1,15 @@
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework_simplejwt.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.utils import get_md5_hash_password
 
-from .models import Assignment, CodeSubmission, Notification, Profile, Question, TestCase
+from .models import Assignment, CodeSubmission, Notification, Profile, Question, TestCase, normalize_email
 
 
 # ---------------------------------------------------------------------------
@@ -13,19 +17,34 @@ from .models import Assignment, CodeSubmission, Notification, Profile, Question,
 # ---------------------------------------------------------------------------
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
+    email = serializers.EmailField(required=True)
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "password", "first_name", "last_name"]
 
+    def validate_email(self, value):
+        email = normalize_email(value)
+        if not email:
+            raise serializers.ValidationError("An email address is required.")
+        if Profile.objects.filter(normalized_email=email).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return email
+
     def create(self, validated_data):
-        user = User.objects.create_user(
-            username=validated_data["username"],
-            email=validated_data.get("email", ""),
-            password=validated_data["password"],
-            first_name=validated_data.get("first_name", ""),
-            last_name=validated_data.get("last_name", ""),
-        )
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=validated_data["username"],
+                    email=validated_data["email"],
+                    password=validated_data["password"],
+                    first_name=validated_data.get("first_name", ""),
+                    last_name=validated_data.get("last_name", ""),
+                )
+        except IntegrityError:
+            # The Profile uniqueness constraint also closes the race between
+            # validation and creation without returning database details.
+            raise serializers.ValidationError({"email": "An account with this email already exists."})
         return user
 
 
@@ -62,6 +81,27 @@ class TrackerTokenObtainPairSerializer(TokenObtainPairSerializer):
                     detail={"detail": "ACCOUNT_REMOVED", "code": "account_removed"},
                     code="account_removed",
                 )
+        return super().validate(attrs)
+
+
+class TrackerTokenRefreshSerializer(TokenRefreshSerializer):
+    """Reject a refresh token after its user's password has changed."""
+
+    def validate(self, attrs):
+        refresh = RefreshToken(attrs["refresh"])
+        try:
+            user = User.objects.get(pk=refresh[api_settings.USER_ID_CLAIM])
+        except (User.DoesNotExist, KeyError):
+            raise InvalidToken("Token is not valid")
+
+        if (
+            not user.is_active
+            or refresh.get(api_settings.REVOKE_TOKEN_CLAIM) != get_md5_hash_password(user.password)
+        ):
+            raise InvalidToken("Token is not valid")
+        profile = getattr(user, "profile", None)
+        if profile is not None and profile.is_removed:
+            raise InvalidToken("Token is not valid")
         return super().validate(attrs)
 
 

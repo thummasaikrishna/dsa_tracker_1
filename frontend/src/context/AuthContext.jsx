@@ -94,11 +94,19 @@ export function AuthProvider({ children }) {
     return me;
   }
 
-  function logout() {
-    clearTokens();
-    setUser(null);
-    if (supabase) {
-      supabase.auth.signOut().catch(() => supabase.auth.signOut({ scope: "local" }));
+  async function logout() {
+    const refresh = localStorage.getItem("refresh");
+    try {
+      if (refresh) await api.post("/auth/logout/", { refresh });
+    } catch {
+      // Clearing local credentials is mandatory even when offline or when the
+      // refresh token has already expired/been rotated.
+    } finally {
+      clearTokens();
+      setUser(null);
+      if (supabase) {
+        supabase.auth.signOut().catch(() => supabase.auth.signOut({ scope: "local" }));
+      }
     }
   }
 

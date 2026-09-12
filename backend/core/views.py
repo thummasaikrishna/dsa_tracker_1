@@ -26,12 +26,14 @@ from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .filters import AssignmentFilter, QuestionFilter
-from .models import Assignment, Notification, Profile, Question, TestCase
+from .models import Assignment, Notification, Profile, Question, TestCase, normalize_email
 from .notify import (
     notify_admin_proof_submitted,
     notify_student_proof_rejected,
@@ -54,6 +56,7 @@ from .serializers import (
     SubmitProofSerializer,
     TestCaseSerializer,
     TrackerTokenObtainPairSerializer,
+    TrackerTokenRefreshSerializer,
 )
 
 
@@ -140,6 +143,14 @@ def build_completed_breakdown(queryset):
 # ---------------------------------------------------------------------------
 class TrackerTokenObtainPairView(TokenObtainPairView):
     serializer_class = TrackerTokenObtainPairSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_login"
+
+
+class TrackerTokenRefreshView(TokenRefreshView):
+    serializer_class = TrackerTokenRefreshSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_refresh"
 
 
 def _fetch_supabase_user(access_token):
@@ -172,6 +183,8 @@ class SupabaseGoogleLoginView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_google"
 
     def post(self, request):
         access_token = request.data.get("access_token")
@@ -188,7 +201,7 @@ class SupabaseGoogleLoginView(APIView):
             return Response({"detail": "Use a Google account to sign in."}, status=status.HTTP_400_BAD_REQUEST)
 
         supabase_user_id = supabase_user.get("id")
-        email = (supabase_user.get("email") or "").strip().lower()
+        email = normalize_email(supabase_user.get("email"))
         if not supabase_user_id or not email or not supabase_user.get("email_confirmed_at"):
             return Response({"detail": "Your Google account must provide a verified email address."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -198,12 +211,12 @@ class SupabaseGoogleLoginView(APIView):
             ).first()
 
             if profile is None:
-                matching_users = list(User.objects.filter(email__iexact=email)[:2])
-                if len(matching_users) > 1:
-                    return Response({"detail": "Unable to safely link this account."}, status=status.HTTP_409_CONFLICT)
-                if matching_users:
-                    user = matching_users[0]
-                    profile, _ = Profile.objects.get_or_create(user=user)
+                # Use the application-wide canonical identity rather than a
+                # provider or display value when linking local accounts.
+                profile = Profile.objects.select_for_update().select_related("user").filter(
+                    normalized_email=email
+                ).first()
+                if profile is not None:
                     if profile.supabase_user_id and profile.supabase_user_id != supabase_user_id:
                         return Response({"detail": "Unable to safely link this account."}, status=status.HTTP_409_CONFLICT)
                 else:
@@ -242,6 +255,8 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_register"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -256,6 +271,27 @@ class RegisterView(generics.CreateAPIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class LogoutView(APIView):
+    """Blacklist the caller's refresh token and always remove no server state by ID."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_logout"
+
+    def post(self, request):
+        raw_refresh = request.data.get("refresh")
+        if isinstance(raw_refresh, str) and raw_refresh:
+            try:
+                refresh = RefreshToken(raw_refresh)
+                if str(refresh.get("user_id")) == str(request.user.id):
+                    refresh.blacklist()
+            except TokenError:
+                # Idempotent logout: expired or already-blacklisted tokens are
+                # not errors and no token material is reflected to the client.
+                pass
+        return Response({"detail": "Logged out."}, status=status.HTTP_200_OK)
 
 
 class MeView(APIView):

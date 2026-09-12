@@ -1,7 +1,5 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenRefreshView
-
 from .ai_views import GenerateQuestionDataView
 from .code_views import CodeRunView, CodeSubmissionViewSet, CodeSubmitView
 from .views import (
@@ -23,6 +21,8 @@ from .views import (
     StudentActivityView,
     StudentListView,
     TrackerTokenObtainPairView,
+    TrackerTokenRefreshView,
+    LogoutView,
 )
 
 router = DefaultRouter()
@@ -35,7 +35,8 @@ urlpatterns = [
     path("auth/register/", RegisterView.as_view(), name="register"),
     path("auth/login/", TrackerTokenObtainPairView.as_view(), name="login"),
     path("auth/supabase/google/", SupabaseGoogleLoginView.as_view(), name="supabase-google-login"),
-    path("auth/refresh/", TokenRefreshView.as_view(), name="refresh"),
+    path("auth/refresh/", TrackerTokenRefreshView.as_view(), name="refresh"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("auth/me/", MeView.as_view(), name="me"),
     # Analytics
     path("analytics/my-activity/", MyActivityView.as_view(), name="my-activity"),

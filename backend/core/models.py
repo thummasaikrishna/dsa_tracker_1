@@ -15,6 +15,11 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
+def normalize_email(email):
+    """Return the canonical email form used for identity matching."""
+    return (email or "").strip().lower()
+
+
 class Profile(models.Model):
     ROLE_CHOICES = (
         ("admin", "Admin"),
@@ -26,6 +31,9 @@ class Profile(models.Model):
     is_removed = models.BooleanField(default=False, db_index=True)
     removed_at = models.DateTimeField(null=True, blank=True)
     supabase_user_id = models.CharField(max_length=36, null=True, blank=True, unique=True)
+    # User.email is not unique in Django's stock User model.  Keep the
+    # canonical value here so the database can enforce application identity.
+    normalized_email = models.CharField(max_length=254, null=True, blank=True, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -48,6 +56,8 @@ class Profile(models.Model):
                 raise ValidationError("Only one admin account is allowed.")
 
     def save(self, *args, **kwargs):
+        if self.user_id:
+            self.normalized_email = normalize_email(self.user.email) or None
         self.full_clean()
         return super().save(*args, **kwargs)
 

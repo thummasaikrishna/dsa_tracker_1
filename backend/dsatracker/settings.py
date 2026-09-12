@@ -12,6 +12,7 @@ Profile.role field, never provider or client-side metadata.
 from datetime import timedelta
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import dj_database_url
 from decouple import Csv, config
@@ -19,9 +20,26 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-local-development-only")
+ENVIRONMENT = config("DJANGO_ENV", default="development").strip().lower()
+if ENVIRONMENT not in {"development", "production"}:
+    raise ImproperlyConfigured("DJANGO_ENV must be either 'development' or 'production'.")
 
-DEBUG = config("DEBUG", default=True, cast=bool)
+
+def _validate_production_settings(debug, secret_key):
+    if debug:
+        raise ImproperlyConfigured("DEBUG must be False when DJANGO_ENV=production.")
+    if not secret_key:
+        raise ImproperlyConfigured("SECRET_KEY is required when DJANGO_ENV=production.")
+
+
+if ENVIRONMENT == "production":
+    # Production must deliberately opt in to a non-debug, environment-provided secret.
+    DEBUG = config("DEBUG", cast=bool)
+    SECRET_KEY = config("SECRET_KEY", default="")
+    _validate_production_settings(DEBUG, SECRET_KEY)
+else:
+    DEBUG = config("DEBUG", default=True, cast=bool)
+    SECRET_KEY = config("SECRET_KEY", default="django-insecure-local-development-only")
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 
@@ -34,6 +52,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
     "core.apps.CoreConfig",
@@ -142,6 +161,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+    # Authentication endpoints opt into these scopes individually. Normal API
+    # operations intentionally remain unthrottled by this security control.
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_login": "5/min",
+        "auth_register": "5/hour",
+        "auth_refresh": "10/min",
+        "auth_google": "10/min",
+        "auth_logout": "10/min",
+    },
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
@@ -155,12 +183,42 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": False,
+    "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "ALGORITHM": "HS256",
+    "CHECK_REVOKE_TOKEN": True,
+    "REVOKE_TOKEN_CLAIM": "hash_password",
 }
 
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
+CORS_ALLOW_CREDENTIALS = False
+
+
+def _is_valid_cors_origin(origin):
+    parsed = urlsplit(origin)
+    return (
+        origin == origin.strip()
+        and "*" not in origin
+        and parsed.scheme in {"http", "https"}
+        and bool(parsed.netloc)
+        and not parsed.path
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
+def _validate_cors_origins(origins, production):
+    if any(not _is_valid_cors_origin(origin) for origin in origins):
+        raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS must contain explicit HTTP(S) origins only.")
+    if production:
+        if not origins:
+            raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS is required when DJANGO_ENV=production.")
+        if any(urlsplit(origin).scheme != "https" for origin in origins):
+            raise ImproperlyConfigured("Production CORS_ALLOWED_ORIGINS must use HTTPS.")
+
+
+_validate_cors_origins(CORS_ALLOWED_ORIGINS, ENVIRONMENT == "production")
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

@@ -13,10 +13,16 @@ from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from .models import Profile
+from .models import Profile, normalize_email
 
 
 @receiver(post_save, sender=User)
 def create_profile_on_user_creation(sender, instance, created, **kwargs):
     if created:
         Profile.objects.get_or_create(user=instance)
+    else:
+        # Keep the database-enforced canonical identity aligned if an admin or
+        # management command changes a user's email.
+        Profile.objects.filter(user=instance).update(
+            normalized_email=normalize_email(instance.email) or None
+        )
