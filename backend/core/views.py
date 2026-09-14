@@ -33,8 +33,9 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from .audit import audit_event
 from .filters import AssignmentFilter, QuestionFilter
-from .models import Assignment, Notification, Profile, Question, TestCase, normalize_email
+from .models import Assignment, AuditLog, Notification, Profile, Question, TestCase, normalize_email
 from .notify import (
     notify_admin_proof_submitted,
     notify_student_proof_rejected,
@@ -196,24 +197,28 @@ class SupabaseGoogleLoginView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "auth_google"
 
+    def _failure(self, request, message, status_code):
+        audit_event(AuditLog.AUTH_GOOGLE_FAILURE, request, success=False)
+        return Response({"detail": message}, status=status_code)
+
     def post(self, request):
         access_token = request.data.get("access_token")
         if not isinstance(access_token, str) or not access_token:
-            return Response({"detail": "Google sign-in could not be completed."}, status=status.HTTP_400_BAD_REQUEST)
+            return self._failure(request, "Google sign-in could not be completed.", status.HTTP_400_BAD_REQUEST)
 
         supabase_user = _fetch_supabase_user(access_token)
         if not supabase_user:
-            return Response({"detail": "Google sign-in could not be verified."}, status=status.HTTP_401_UNAUTHORIZED)
+            return self._failure(request, "Google sign-in could not be verified.", status.HTTP_401_UNAUTHORIZED)
 
         metadata = supabase_user.get("app_metadata") or {}
         providers = metadata.get("providers") or []
         if metadata.get("provider") != "google" and "google" not in providers:
-            return Response({"detail": "Use a Google account to sign in."}, status=status.HTTP_400_BAD_REQUEST)
+            return self._failure(request, "Use a Google account to sign in.", status.HTTP_400_BAD_REQUEST)
 
         supabase_user_id = supabase_user.get("id")
         email = normalize_email(supabase_user.get("email"))
         if not supabase_user_id or not email or not supabase_user.get("email_confirmed_at"):
-            return Response({"detail": "Your Google account must provide a verified email address."}, status=status.HTTP_400_BAD_REQUEST)
+            return self._failure(request, "Your Google account must provide a verified email address.", status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             profile = Profile.objects.select_for_update().select_related("user").filter(
@@ -245,6 +250,7 @@ class SupabaseGoogleLoginView(APIView):
                 profile.save(update_fields=["supabase_user_id"])
 
             if profile.is_removed or not profile.user.is_active:
+                audit_event(AuditLog.AUTH_REMOVED_ACCOUNT_ACCESS, request, user=profile.user, success=False)
                 return Response(
                     {"detail": "ACCOUNT_REMOVED", "code": "account_removed"},
                     status=status.HTTP_401_UNAUTHORIZED,
@@ -301,6 +307,7 @@ class LogoutView(APIView):
                 # Idempotent logout: expired or already-blacklisted tokens are
                 # not errors and no token material is reflected to the client.
                 pass
+        audit_event(AuditLog.AUTH_LOGOUT, request, success=True)
         return Response({"detail": "Logged out."}, status=status.HTTP_200_OK)
 
 

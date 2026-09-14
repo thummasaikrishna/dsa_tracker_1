@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .agents import AIGenerationUnavailable, generate_question_data
+from .audit import audit_event
+from .models import AuditLog
 from .permissions import IsAdmin
 from .throttles import AIGenerationThrottle
 
@@ -45,4 +47,5 @@ class GenerateQuestionDataView(APIView):
                 {"success": False, "message": "Unable to generate question details. Please try again."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        audit_event(AuditLog.AI_GENERATION, request, success=True, metadata={"cached": cached})
         return Response({"success": True, "data": data, "cached": cached})

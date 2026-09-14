@@ -429,3 +429,69 @@ class AIQuestionGenerationCache(models.Model):
 
     def __str__(self):
         return f"ai-cache {self.input_hash[:12]}"
+
+
+class AuditLog(models.Model):
+    """Security-relevant events only; never a general request or payload log."""
+
+    AUTH_LOGIN_SUCCESS = "AUTH_LOGIN_SUCCESS"
+    AUTH_LOGIN_FAILURE = "AUTH_LOGIN_FAILURE"
+    AUTH_LOGOUT = "AUTH_LOGOUT"
+    AUTH_REFRESH_FAILURE = "AUTH_REFRESH_FAILURE"
+    AUTH_GOOGLE_FAILURE = "AUTH_GOOGLE_FAILURE"
+    AUTH_TOKEN_FAILURE = "AUTH_TOKEN_FAILURE"
+    AUTH_PERMISSION_DENIED = "AUTH_PERMISSION_DENIED"
+    AUTH_OBJECT_ACCESS_DENIED = "AUTH_OBJECT_ACCESS_DENIED"
+    AUTH_REMOVED_ACCOUNT_ACCESS = "AUTH_REMOVED_ACCOUNT_ACCESS"
+    CODE_EXECUTION = "CODE_EXECUTION"
+    CODE_EXECUTION_THROTTLED = "CODE_EXECUTION_THROTTLED"
+    CODE_SUBMISSION = "CODE_SUBMISSION"
+    CODE_SUBMISSION_THROTTLED = "CODE_SUBMISSION_THROTTLED"
+    AI_GENERATION = "AI_GENERATION"
+    AI_GENERATION_THROTTLED = "AI_GENERATION_THROTTLED"
+    VALIDATION_FAILURE = "VALIDATION_FAILURE"
+    RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED"
+    SERVER_ERROR = "SERVER_ERROR"
+
+    EVENT_CHOICES = (
+        (AUTH_LOGIN_SUCCESS, "Authentication login succeeded"),
+        (AUTH_LOGIN_FAILURE, "Authentication login failed"),
+        (AUTH_LOGOUT, "Authentication logout"),
+        (AUTH_REFRESH_FAILURE, "Authentication refresh failed"),
+        (AUTH_GOOGLE_FAILURE, "Google authentication failed"),
+        (AUTH_TOKEN_FAILURE, "Authentication token failed"),
+        (AUTH_PERMISSION_DENIED, "Authorization denied"),
+        (AUTH_OBJECT_ACCESS_DENIED, "Object access denied"),
+        (AUTH_REMOVED_ACCOUNT_ACCESS, "Removed account access"),
+        (CODE_EXECUTION, "Code execution"),
+        (CODE_EXECUTION_THROTTLED, "Code execution throttled"),
+        (CODE_SUBMISSION, "Code submission"),
+        (CODE_SUBMISSION_THROTTLED, "Code submission throttled"),
+        (AI_GENERATION, "AI generation"),
+        (AI_GENERATION_THROTTLED, "AI generation throttled"),
+        (VALIDATION_FAILURE, "Validation failed"),
+        (RATE_LIMIT_EXCEEDED, "Rate limit exceeded"),
+        (SERVER_ERROR, "Server error"),
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    user = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="security_audit_events"
+    )
+    event_type = models.CharField(max_length=40, choices=EVENT_CHOICES, db_index=True)
+    success = models.BooleanField(default=False, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    request_path = models.CharField(max_length=255, blank=True)
+    http_method = models.CharField(max_length=10, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["event_type", "-created_at"], name="core_audit_event_created_idx"),
+            models.Index(fields=["user", "-created_at"], name="core_audit_user_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} at {self.created_at:%Y-%m-%d %H:%M:%S}"

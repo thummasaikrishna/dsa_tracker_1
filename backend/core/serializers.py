@@ -9,6 +9,8 @@ from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.utils import get_md5_hash_password
 
+from .audit import audit_event
+from .models import AuditLog
 from .models import Assignment, CodeSubmission, Notification, Profile, Question, TestCase, normalize_email
 
 
@@ -81,7 +83,9 @@ class TrackerTokenObtainPairSerializer(TokenObtainPairSerializer):
                     detail={"detail": "ACCOUNT_REMOVED", "code": "account_removed"},
                     code="account_removed",
                 )
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        audit_event(AuditLog.AUTH_LOGIN_SUCCESS, self.context.get("request"), user=self.user, success=True)
+        return data
 
 
 class TrackerTokenRefreshSerializer(TokenRefreshSerializer):

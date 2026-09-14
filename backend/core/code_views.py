@@ -11,8 +11,9 @@ from .throttles import CodeExecutionThrottle, CodeSubmissionThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .audit import audit_event
 from .executor import ExecutorUnavailable, evaluate_cases
-from .models import Assignment, CodeSubmission, Question, TestCase
+from .models import Assignment, AuditLog, CodeSubmission, Question, TestCase
 from .notify import notify_admin_code_submitted, notify_student_code_result
 from .scoring import calculate_potential_points
 from .serializers import (
@@ -151,6 +152,12 @@ class CodeRunView(APIView):
             logger.warning("Code execution unavailable during run: %s", exc.__class__.__name__)
             return Response({"detail": EXECUTOR_UNAVAILABLE_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         outcome["results"] = _student_safe_results(outcome.get("results"))
+        audit_event(
+            AuditLog.CODE_EXECUTION,
+            request,
+            success=True,
+            metadata={"outcome": outcome.get("status", "unknown")},
+        )
         return Response(outcome)
 
 
@@ -228,6 +235,12 @@ class CodeSubmitView(APIView):
 
         notify_admin_code_submitted(locked)
         notify_student_code_result(locked)
+        audit_event(
+            AuditLog.CODE_SUBMISSION,
+            request,
+            success=True,
+            metadata={"outcome": locked.status},
+        )
         return Response(CodeSubmissionSerializer(locked).data, status=status.HTTP_201_CREATED)
 
 
