@@ -2,6 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -27,6 +28,7 @@ def _outcome(status="accepted", passed=2, total=2, results=None):
 
 class CodeJudgeApiTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.admin = User.objects.create_user("admincj", password="pass12345")
         self.admin.profile.role = "admin"
         self.admin.profile.save()

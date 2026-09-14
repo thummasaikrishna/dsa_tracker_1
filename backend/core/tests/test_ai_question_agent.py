@@ -2,6 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -46,6 +47,7 @@ def _json_dump(payload):
 )
 class AIQuestionAgentTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.admin = User.objects.create_user("adminai", password="pass12345")
         self.admin.profile.role = "admin"
         self.admin.profile.save()

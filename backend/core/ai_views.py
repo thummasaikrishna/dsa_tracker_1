@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 
 from .agents import AIGenerationUnavailable, generate_question_data
 from .permissions import IsAdmin
+from .throttles import AIGenerationThrottle
 
 
 class GenerateQuestionDataSerializer(serializers.Serializer):
@@ -17,6 +18,7 @@ class GenerateQuestionDataView(APIView):
     """POST /api/admin/ai/generate-question-data/ — admin-only draft generation."""
 
     permission_classes = [IsAuthenticated, IsAdmin]
+    throttle_classes = [AIGenerationThrottle]
 
     def post(self, request):
         serializer = GenerateQuestionDataSerializer(data=request.data)

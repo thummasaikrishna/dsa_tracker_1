@@ -163,13 +163,21 @@ REST_FRAMEWORK = {
     ),
     # Authentication endpoints opt into these scopes individually. Normal API
     # operations intentionally remain unthrottled by this security control.
+
     "DEFAULT_THROTTLE_RATES": {
+        # Authentication
         "auth_login": "5/min",
         "auth_register": "5/hour",
         "auth_refresh": "10/min",
         "auth_google": "10/min",
         "auth_logout": "10/min",
+
+        # Expensive operations
+        "code_execution": "20/min",
+        "code_submission": "10/min",
+        "ai_generation": "5/min",
     },
+
     "DEFAULT_FILTER_BACKENDS": (
         "core.filters.StrictDjangoFilterBackend",
         "core.filters.BoundedSearchFilter",
@@ -196,9 +204,6 @@ CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = False
 
 
-<<<<<<< HEAD
-def _is_valid_cors_origin(origin):
-=======
 def _valid_origin(origin):
     parsed = urlsplit(origin)
     return (
@@ -212,7 +217,6 @@ def _valid_origin(origin):
     )
 
 
-<<<<<<< HEAD
 def _validate_origins(origins, name, production=False, required=False):
     if required and not origins:
         raise ImproperlyConfigured(
@@ -244,17 +248,18 @@ _validate_origins(
     "CSRF_TRUSTED_ORIGINS",
     ENVIRONMENT == "production",
 )
-    if required and not origins:
-        raise ImproperlyConfigured(f"{name} is required when DJANGO_ENV=production.")
-    if any(not _valid_origin(origin) for origin in origins):
-        raise ImproperlyConfigured(f"{name} must contain explicit HTTP(S) origins only.")
-    if production and any(urlsplit(origin).scheme != "https" for origin in origins):
-        raise ImproperlyConfigured(f"{name} must use HTTPS origins when DJANGO_ENV=production.")
+
+# Backwards-compatible helpers retained for the Phase 1 CORS regression tests.
+_is_valid_cors_origin = _valid_origin
 
 
-_validate_origins(CORS_ALLOWED_ORIGINS, "CORS_ALLOWED_ORIGINS", ENVIRONMENT == "production", required=ENVIRONMENT == "production")
-_validate_origins(CSRF_TRUSTED_ORIGINS, "CSRF_TRUSTED_ORIGINS", ENVIRONMENT == "production")
->>>>>>> db3c86d (Implement security phase 3 validation)
+def _validate_cors_origins(origins, production):
+    _validate_origins(
+        origins,
+        "CORS_ALLOWED_ORIGINS",
+        production,
+        required=production,
+    )
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

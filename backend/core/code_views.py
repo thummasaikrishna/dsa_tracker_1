@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from .throttles import CodeExecutionThrottle, CodeSubmissionThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -112,6 +113,7 @@ class CodeRunView(APIView):
     """POST /api/code/run/ — public tests only, no persistence, no admin notification."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [CodeExecutionThrottle]
 
     def post(self, request):
         if not _ensure_active_student(request.user):
@@ -156,6 +158,7 @@ class CodeSubmitView(APIView):
     """POST /api/code/submit/ — persist source, judge all tests, notify, award once."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [CodeSubmissionThrottle]
 
     def post(self, request):
         if not _ensure_active_student(request.user):

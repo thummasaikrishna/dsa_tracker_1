@@ -53,7 +53,7 @@ class SecurityAuthTests(TestCase):
             format="json",
         )
         self.assertEqual(duplicate_email.status_code, 400)
-        self.assertIn("email", duplicate_email.data)
+        self.assertIn("email", duplicate_email.data["error"]["details"])
 
     def test_login_username_and_email_are_case_insensitive_and_bad_password_fails(self):
         self.assertEqual(self.login("SECURITY-USER").status_code, 200)
@@ -148,7 +148,9 @@ class AuthenticationThrottleTests(TestCase):
         rates = self._rates(auth_login="1/min", auth_register="1/min", auth_refresh="1/min", auth_google="1/min")
         with override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "DEFAULT_THROTTLE_RATES": rates}), patch.object(ScopedRateThrottle, "THROTTLE_RATES", rates):
             self.assertEqual(self.client.post("/api/auth/login/", {"username": "throttle-user", "password": "bad"}, format="json").status_code, 401)
-            self.assertEqual(self.client.post("/api/auth/login/", {"username": "throttle-user", "password": "bad"}, format="json").status_code, 429)
+            throttled = self.client.post("/api/auth/login/", {"username": "throttle-user", "password": "bad"}, format="json")
+            self.assertEqual(throttled.status_code, 429)
+            self.assertEqual(throttled.data["error"]["code"], "throttled")
 
             self.assertEqual(self.client.post("/api/auth/register/", {"username": "throttle-register", "email": "register@example.test", "password": "StrongPass123!"}, format="json").status_code, 201)
             self.assertEqual(self.client.post("/api/auth/register/", {"username": "throttle-register-two", "email": "register2@example.test", "password": "StrongPass123!"}, format="json").status_code, 429)
